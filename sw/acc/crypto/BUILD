@@ -115,10 +115,19 @@ acc_library(
 )
 
 acc_library(
-    name = "p256_base",
+    name = "p256_base_asm",
     srcs = [
         "p256_base.s",
     ],
+)
+
+# With --//sw/acc/jasmin:enable_p256_mod_mul, mod_mul_256x256 is the Jasmin version.
+alias(
+    name = "p256_base",
+    actual = select({
+        "//sw/acc/jasmin:p256_mod_mul_enabled": "//sw/acc/jasmin:p256_base_with_jasmin",
+        "//conditions:default": ":p256_base_asm",
+    }),
 )
 
 acc_library(

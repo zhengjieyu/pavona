@@ -201,6 +201,9 @@ p256_reduce:
 
   ret
 
+/* With P256_JASMIN_MOD_MUL defined, mod_mul_256x256 comes from
+   sw/acc/jasmin/p256_mod_mul_shim.s instead. */
+#ifndef P256_JASMIN_MOD_MUL
 /**
  * 256-bit modular multiplication for P-256 coordinate and scalar fields.
  *
@@ -261,6 +264,7 @@ mod_mul_256x256:
 
   /* Reduce product modulo m (tail-call). */
   jal       x0, p256_reduce
+#endif /* P256_JASMIN_MOD_MUL */
 
 /**
  * 320- by 128-bit modular multiplication for P-256 coordinate and scalar fields.

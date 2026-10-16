@@ -1,0 +1,85 @@
+/* Copyright zeroRISC Inc. */
+/* Licensed under the Apache License, Version 2.0, see LICENSE for details. */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Jasmin counterpart of mod_mul_256x256 and p256_reduce in
+   sw/acc/crypto/p256_base.s; see that file for the algorithm and the proofs
+   of the bounds. The instruction sequence follows the assembly one to one,
+   including the dummy instructions that clear ACC and flags (marked
+   #[keep] so that the compiler does not remove them as dead code). */
+
+require "mul256.jinc"
+
+/* Barrett reduction of the 512-bit x = xhi:xlo modulo m.
+
+   corr is u if bit 511 of x is set and 0 otherwise, zero is all-zero, and
+   mf, lf, zf are the current FG0 flags. Requires MOD = m. */
+inline
+fn p256_reduce(reg u256 xlo xhi m u corr zero modv, reg bool mf lf zf) -> reg u256 {
+  reg u256 q1 q1hi q2lo q2hi t qplo qphi r d;
+  reg bool cf;
+
+  /* q1' = x >> 255 (lower 256 bits) */
+  q1 = #BN_RSHI(xhi, xlo, 255);
+
+  /* q2' = q1' * u */
+  q2lo, q2hi, mf, lf, zf = mul256_full(q1, u);
+  #[keep] cf, mf, lf, zf, xhi = #BN_ADD(xhi, zero);
+
+  /* q1[256] = x[511] */
+  q1hi = #BN_RSHI(zero, xhi, 255);
+
+  /* compensate for neglected MSB of u by adding q1 */
+  cf, mf, lf, zf, q2hi = #BN_ADD(q2hi, q1);
+  cf, mf, lf, zf, q1hi = #BN_ADDC(q1hi, zero, cf);
+  #[keep] cf, mf, lf, zf, d = #BN_ADD(zero, zero);
+
+  /* compensate for neglected MSB of q1 by conditionally adding u */
+  cf, mf, lf, zf, q2hi = #BN_ADD(q2hi, corr);
+  cf, mf, lf, zf, q1hi = #BN_ADDC(q1hi, zero, cf);
+  #[keep] cf, mf, lf, zf, d = #BN_ADD(zero, zero);
+
+  /* q3 = q2''' >> 1 */
+  t = #BN_RSHI(q1hi, q2hi, 1);
+
+  /* q3 * m */
+  qplo, qphi, mf, lf, zf = mul256_full(m, t);
+  #[keep] mf, lf, zf, zero, _ = #BN_MULQACC_SO_Z_U(mf, lf, zf, zero, zero, 0, zero, 0, 0);
+
+  /* r = x - q3 * m */
+  cf, mf, lf, zf, qplo = #BN_SUB(xlo, qplo);
+  cf, mf, lf, zf, xhi = #BN_SUBB(xhi, qphi, cf);
+
+  /* subtract m if bit 256 of r is set */
+  t = #BN_SEL(m, zero, lf);
+  cf, mf, lf, zf, t = #BN_SUB(qplo, t);
+  #[keep] cf, mf, lf, zf, d = #BN_SUB(zero, zero);
+
+  /* final correction if r >= m */
+  r = #BN_ADDM(t, zero, modv);
+
+  return r;
+}
+
+/* c = a * b mod m, with u the lower 256 bits of the Barrett constant.
+
+   Requires a * b < 2^256 * m. Writes m to MOD; callers in p256_*.s already set
+   MOD = m before calling mod_mul_256x256, so this does not change MOD. */
+export
+fn p256_mod_mul_256x256_jazz(reg u256 a b m u) -> reg u256 {
+  reg u256 xlo xhi zero corr modv r;
+  reg bool mf lf zf;
+
+  modv = #BN_MODW(m);
+  mf, lf, zf, zero = #set0_256();
+
+  /* x = a * b */
+  xlo, xhi, mf, lf, zf = mul256_full(a, b);
+
+  /* corr = M ? u : 0 */
+  corr = #BN_SEL(u, zero, mf);
+  #[keep] mf, lf, zf, zero, _ = #BN_MULQACC_SO_Z_U(mf, lf, zf, zero, zero, 0, zero, 0, 0);
+
+  r = p256_reduce(xlo, xhi, m, u, corr, zero, modv, mf, lf, zf);
+  return r;
+}

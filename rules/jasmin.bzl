@@ -6,18 +6,19 @@
 
 load("//rules:acc.bzl", "acc_library")
 
-def jasmin_library(name, src, **kwargs):
+def jasmin_library(name, src, includes = [], **kwargs):
     """Compiles a Jasmin source and assembles it into an `acc_library`.
 
     Args:
       name: The name of the `acc_library`.
       src: The Jasmin source.
+      includes: Jasmin files that `src` requires.
       **kwargs: Passed on to `acc_library`.
     """
 
     native.genrule(
         name = name + "_asm",
-        srcs = [src],
+        srcs = [src] + includes,
         outs = [name + "_asm.s"],
         cmd = "$(execpath @jasmin_acc//:bin/jasminc) -arch otbn -system linux $(location {}) -o $@".format(src),
         tools = ["@jasmin_acc//:bin/jasminc"],
